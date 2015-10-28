@@ -1,7 +1,16 @@
+import argparse
+parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+parser.add_argument("--extra_cost_weight", type=float, dest="extra_cost_weight", default=0.)
+parser.add_argument("--penalize_layerwise", type=bool, dest="penalize_layerwise", default=True)
+args = parser.parse_args()
+locals().update(vars(args))
+
 import ipdb
 import numpy as np
 import theano
 import theano.tensor as T
+
+import os
 
 from cle.cle.cost import NllMul
 from cle.cle.data import Iterator
@@ -20,13 +29,17 @@ from cle.cle.train.opt import Adam
 from cle.cle.utils import flatten, sharedX, unpack, OrderedDict
 from cle.datasets.enwiki import EnWiki
 
-
-data_path = '/home/junyoung/data/wikipedia-text/enwiki_char_and_word.npz'
-save_path = '/home/junyoung/repos/cle/saved/'
+data_path = os.path.join(os.environ['FUEL_DATA_PATH'], 'wikipedia-text/enwiki_char_and_word.npz')
+print "data_path=", data_path
+save_path = '/home/capybara/cle/results/enwiki_results'
+save_path += '_extra_cost_weight=' + str(extra_cost_weight)
+if penalize_layerwise:
+    save_path += '_penalize_layerwise'
+print "save_path=", save_path
 
 batch_size = 100
 reset_freq = 100
-debug = 0
+debug = 1
 
 model = Model()
 trdata = EnWiki(name='train',
@@ -144,18 +157,33 @@ def inner_fn(i_t, h1_tm1, h2_tm1, h3_tm1):
                               h3_init_state,
                               None])
 
+hts = [h1_t, h2_t, h3_t]
+
+if penalize_layerwise:
+    norms = [T.sum(h_t**2, 2)**.5 for h_t in hts]
+    norm_cost = T.mean([(norm[1:] - norm[:-1])**2 for norm in norms])
+else:
+    print "TODO: not implemented, norm_cost == 0. !!!"
+    h_t = T.concatenate(hts, 2)
+    norms = T.sum(h_t**2, 2)**.5
+    norm_cost = T.mean(norms[1:] - norms[:-1])**2
+    norm_cost = 0. # TODO!
+
 reshaped_y = y.reshape((y.shape[0]*y.shape[1], -1))
 reshaped_y = onehot.fprop([reshaped_y])
 reshaped_y_hat = y_hat.reshape((y_hat.shape[0]*y_hat.shape[1], -1))
 
 cost = NllMul(reshaped_y, reshaped_y_hat)
 cost = cost.mean()
+cost += extra_cost_weight * norm_cost
 cost.name = 'cost'
 
 model.inputs = [x, y]
 model._params = params
 model.nodes = nodes
 model.set_updates(update_list)
+
+hfun = theano.function([x], hts)
 
 optimizer = Adam(
     lr=0.001
@@ -166,7 +194,7 @@ extension = [
     EpochCount(100),
     Monitoring(freq=100,
                ddout=[cost]),
-    Picklize(freq=10000,
+    Picklize(freq=5000,
              path=save_path)
 ]
 
