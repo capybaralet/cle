@@ -31,8 +31,8 @@ from cle.datasets.enwiki import EnWiki
 
 data_path = os.path.join(os.environ['FUEL_DATA_PATH'], 'wikipedia-text/enwiki_char_and_word.npz')
 print "data_path=", data_path
-save_path = '/home/capybara/cle/results/enwiki_results'
-save_path += '_extra_cost_weight=' + str(extra_cost_weight)
+save_path = os.path.join(os.environ['SAVE_PATH'], 'cle_enwiki_results/')
+save_path += 'extra_cost_weight=' + str(extra_cost_weight)
 if penalize_layerwise:
     save_path += '_penalize_layerwise'
 print "save_path=", save_path
@@ -46,6 +46,8 @@ trdata = EnWiki(name='train',
                 path=data_path)
 tedata = EnWiki(name='test',
                 path=data_path)
+
+ipdb.set_trace()
 
 init_W = InitCell('rand')
 init_U = InitCell('ortho')
